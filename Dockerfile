@@ -1,5 +1,5 @@
-FROM alpine:edge
-# FROM alpine:3.4
+# FROM alpine:edge
+FROM alpine:3.4
 MAINTAINER jgilley@chegg.com
 
 # set our environment
@@ -52,11 +52,9 @@ RUN apk add \
 		php5-sqlite3 \
 		php5-xmlreader \
 		php5-xmlrpc \
-		php5-zip
-
-RUN wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://raw.githubusercontent.com/sgerrand/alpine-pkg-php5-memcached/master/sgerrand.rsa.pub && \
-	wget https://github.com/sgerrand/alpine-pkg-php5-memcached/releases/download/2.2.0-r0/php5-memcached-2.2.0-r0.apk && \
-	apk add php5-memcached-2.2.0-r0.apk
+		php5-zip \
+		php5-memcache \
+		php5-apcu
 
 # Add the container config files
 COPY container_confs /
@@ -64,8 +62,6 @@ COPY container_confs /
 # create the supervisor run dir
 # make sure that entrypoint and other scripts are executeable
 RUN mkdir -p /run/supervisord && \
-	ln -s /usr/bin/php5 /usr/bin/php && \
-	ln -s /usr/bin/phpize5 /usr/bin/phpize && \
 	mv /etc/profile.d/color_prompt /etc/profile.d/color_prompt.sh && \
 	chmod +x /entrypoint.sh /wait-for-it.sh /etc/profile /etc/profile.d/*.sh
 

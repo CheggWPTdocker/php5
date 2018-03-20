@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/local/bin/dumb-init /bin/bash
 # ----------------------------------------------------------------------------
 # entrypoint for container
 # ----------------------------------------------------------------------------
@@ -9,7 +9,7 @@ export HOST_IP=${HOST_IP}
 echo
 echo "container started with ip: ${HOST_IP}..."
 echo
-for script in /docker-init.d/*; do
+for script in /container-init.d/*; do
 	case "$script" in
 		*.sh)     echo "... running $script"; . "$script" ;;
 		*)        echo "... ignoring $script" ;;

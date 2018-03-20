@@ -1,97 +1,129 @@
-# FROM alpine:edge
-FROM alpine:3.4
-MAINTAINER jgilley@chegg.com
+FROM php:5.6.34-fpm-alpine3.4
+LABEL maintainer="Joel Gilley jgilley@chegg.com"
 
-# set our environment
-ENV APP_ENV='DEVELOPMENT'
-# ENV APP_ENV='PRODUCTION'
-ENV php_ini_dir /etc/php5/conf.d
-ENV php_ini /etc/php5/php.ini
+ENV TIMEZONE=UTC \
+	ENV=/etc/profile \
+	APP_ENV=development
 
-# if edge libraries are needed use the following:
-RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories
+# dumb-init
+# tidyhtml-libs tidyhtml
+# tidyhtml-dev
+RUN apk --update add  ca-certificates nginx supervisor bash && \
+	apk add --virtual .build_package git curl build-base autoconf dpkg-dev \
+		file libmagic re2c cmake dpkg && \
+	apk add --virtual .deps_run libxpm freetype xextproto inputproto xtrans \
+		libwebp libxext libxt libx11 libxcb libxau libsm libice libxdmcp \
+		libbsd xproto libuuid kbproto libpthread-stubs libpng \
+		libmemcached-libs zlib freetds unixodbc readline libpq \
+		gettext-asprintf gettext-libs libintl gettext libunistring libldap zlib \
+		icu-libs libmemcached cyrus-sasl libmcrypt hiredis gmp && \
+	apk add --virtual .build_deps libxau-dev libbsd-dev libxdmcp-dev libxcb-dev \
+		libx11-dev libxext-dev libice-dev libsm-dev libxt-dev libxpm-dev libpng-dev \
+		freetype-dev libjpeg-turbo-dev libwebp-dev bzip2-dev gettext-dev gmp-dev \
+		icu-dev freetds-dev postgresql-dev libxml2-dev zlib-dev \
+		libmemcached-dev cyrus-sasl-dev libmcrypt-dev hiredis-dev tzdata
 
-# install base packages - BASH should only be used for debugging, it's almost a meg in size
-# install ca-certificates
-# clean up the apk cache (no-cache still caches the indexes)
-# update the ca-certificates
-RUN	apk --update \
-	add bash ca-certificates openssl supervisor && \
-	update-ca-certificates
-
-RUN	apk add \
-	--virtual .build_package \
-		git curl file build-base autoconf
-
-RUN apk add \
-	--virtual .php_service \
-		mysql-client \
-		php5 \
-		php5-bcmath \
-		php5-bz2 \
-		php5-ctype \
-		php5-curl \
-		php5-dom \
-		php5-fpm \
-		php5-gd \
-		php5-gettext \
-		php5-gmp \
-		php5-intl \
-		php5-iconv \
-		php5-json \
-		php5-mcrypt \
-		php5-mysqli \
-		php5-openssl \
-		php5-pdo \
-		php5-pdo_dblib \
-		php5-pdo_mysql \
-		php5-pdo_pgsql \
-		php5-pdo_sqlite \
-		php5-phar \
-		php5-soap \
-		php5-sqlite3 \
-		php5-xmlreader \
-		php5-xmlrpc \
-		php5-zip \
-		php5-memcache \
-		php5-apcu
-
-# Add the container config files
-COPY container_confs /
-
-# create the supervisor run dir
-# make sure that entrypoint and other scripts are executeable
-RUN mkdir -p /run/supervisord && \
+RUN cp /usr/share/zoneinfo/${TIMEZONE} /etc/localtime && \
+	echo "${TIMEZONE}" > /etc/timezone && \
+	update-ca-certificates && \
+	rm -rf /etc/nginx/conf.d/default.conf && \
 	mv /etc/profile.d/color_prompt /etc/profile.d/color_prompt.sh && \
-	chmod +x /entrypoint.sh /wait-for-it.sh /etc/profile /etc/profile.d/*.sh
+	echo alias dir=\'ls -alh --color\' >> /etc/profile && \
+	echo 'source ~/.profile' >> /etc/profile && \
+	echo 'cat /etc/os-release' >> ~/.profile && \
+	mkdir -p /app /run/nginx && \
+	chown -R nginx:www-data /run/nginx && \
+	chown -R :www-data /app && \
+	chmod -R g+rw /app
 
-# Add the www-data user and group, fail on error
-RUN set -x ; \
-	addgroup -g 82 -S www-data ; \
-	adduser -u 82 -D -S -G www-data www-data && exit 0 ; exit 1
+ENV tidy_version=5.6.0
+RUN echo INSTALL TIDY-HTML5 LIBRARY && \
+ 	git clone --branch ${tidy_version} --depth 1 https://github.com/htacg/tidy-html5.git /tmp/tidy-html5 && \
+	cd /tmp/tidy-html5/build/cmake/ && \
+	cmake ../.. -DCMAKE_BUILD_TYPE=Release && \
+	make && make install && \
+	ln -s /usr/local/include/tidybuffio.h /usr/local/include/buffio.h && \
+	cd && rm -rf /tmp/tidy-html5
 
-# Configure PHP
-# dont display errors 	sed -i -e 's/display_errors = Off/display_errors = On/g' ${php_ini} && \
-# fix path off
-# error log becomes stderr
-# Enable php-fpm on nginx virtualhost configuration
-RUN	sed -i -e 's/;cgi.fix_pathinfo=1/cgi.fix_pathinfo=0/g' ${php_ini} && \
-	sed -i -e 's/;error_log = php_errors.log/error_log = \/proc\/self\/fd\/1/g' ${php_ini}
+# Install known pacakages with docker-php-ext-install, install others with pecl install
+RUN echo INSTALL DOCKER-PHP-EXT AVAILABLE MODULES && \
+	docker-php-ext-install -j4 bcmath bz2 gd gettext gmp intl mysqli mcrypt \
+	pdo_dblib pdo_pgsql pdo_mysql session soap tidy opcache xmlrpc zip
+RUN echo INSTALL PECL APCU MODULES && \
+	yes "" | pecl install apcu-4.0.11 && \
+	echo "extension=apcu.so" > /usr/local/etc/php/conf.d/pecl-php-ext-apcu.ini
+RUN echo INSTALL PECL MEMCACHED MODULES && \
+	yes "" | pecl install memcached-2.2.0 && \
+	echo "extension=memcached.so" > /usr/local/etc/php/conf.d/pecl-php-ext-memcached.ini
 
-# Add the process control dirs for php
+# Install phpiredis
+ENV phpredis_version=4.0.0
+RUN echo INSTALL PHPREDIS PHP MODULE && \
+	git clone --branch ${phpredis_version} --depth 1 https://github.com/phpredis/phpredis.git /tmp/phpredis && \
+	cd /tmp/phpredis && \
+	phpize && ./configure && make && make install && \
+	echo "extension=redis.so" > /usr/local/etc/php/conf.d/source-php-ext-phpredis.ini && \
+	cd && rm -rf /tmp/phpredis
+
+# Install tideways
+ENV tideways_version=1.5.3 \
+	tideways_ext_version=4.1.5 \
+	tideways_php_version=2.0.16 \
+	tideways_dl=https://github.com/tideways/ \
+	TIDEWAYS_PORT_UDP=8135 \
+	TIDEWAYS_PORT_TCP=9135 \
+	TIDEWAYS_ENV=production
+RUN echo INSTALL TIDEWAYS PHP MODULE && \
+	curl -L "${tideways_dl}/php-profiler-extension/archive/v${tideways_ext_version}.zip" \
+	--output "/tmp/v${tideways_ext_version}.zip" && \
+	cd /tmp && unzip "v${tideways_ext_version}.zip" && \
+	cd "php-xhprof-extension-${tideways_ext_version}" && \
+	phpize && \
+	./configure && \
+	make && make install && \
+	cd /tmp && rm -rf php-xhprof-extension-${tideways_ext_version}/ v${tideways_ext_version}.zip && \
+	echo "extension=tideways.so" > /usr/local/etc/php/conf.d/source-php-ext-tideways.ini && \
+echo INSTALL TIDEWAYS PROFILER && \
+	curl -L "${tideways_dl}/profiler/releases/download/v${tideways_php_version}/Tideways.php" \
+	--output "$(php-config --extension-dir)/Tideways.php" && \
+	ls -l "$(php-config --extension-dir)/Tideways.php" && \
+echo INSTALL TIDEWAYS DAEMON && \
+	curl -L "https://s3-eu-west-1.amazonaws.com/tideways/daemon/${tideways_version}/tideways-daemon-v${tideways_version}-alpine.tar.gz" \
+	--output "/tmp/tideways-daemon-v${tideways_version}-alpine.tar.gz" && \
+	cd /tmp && tar -zxf tideways-daemon-v${tideways_version}-alpine.tar.gz && \
+	mv build/dist/tideways-daemon /usr/bin && \
+	ls -l /usr/bin/tideways-daemon && \
+	mkdir -p /var/run/tideways && \
+	cd /tmp && rm -rf build/ tideways-daemon-v${tideways_version}-alpine.tar.gz
+
+# Install dumb-init
+ENV dumbinit_version=1.2.1
+RUN echo INSTALL DUMB-INIT PID HANDLER && \
+	wget -O /usr/local/bin/dumb-init https://github.com/Yelp/dumb-init/releases/download/v${dumbinit_version}/dumb-init_${dumbinit_version}_amd64 && \
+	chmod +x /usr/local/bin/dumb-init
+
+# Add the process control directories for PHP
 # make it user/group read write
 RUN mkdir -p /run/php && \
 	chown -R www-data:www-data /run/php
 
-# dump some build done info on PHP
-RUN php -m && php --ini
+# Report on PHP build
+RUN php -m && \
+	php -v
 
-# Clean up the apk cache and tmp just in case
-RUN rm -rf /var/cache/apk/* && \
-	rm -rf /tmp/*
+# clean up apk
+RUN apk del .build_deps && \
+	apk del .build_package && \
+	rm -rf /var/cache/apk/*
+
+# Add the config files
+COPY container_confs /
+RUN chmod a+x /entrypoint.sh /wait-for-it.sh /start_tideways.sh
+
+WORKDIR /app
 
 # Expose the ports for nginx
-EXPOSE 9000
+EXPOSE 80 443
 
 # the entry point definition
 ENTRYPOINT ["/entrypoint.sh"]

@@ -1,2 +1,2 @@
 # CheggWPT Docker Containers
-## JUST php7-fpm
+## JUST php5-fpm

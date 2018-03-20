@@ -31,10 +31,10 @@ RUN cp /usr/share/zoneinfo/${TIMEZONE} /etc/localtime && \
 	echo alias dir=\'ls -alh --color\' >> /etc/profile && \
 	echo 'source ~/.profile' >> /etc/profile && \
 	echo 'cat /etc/os-release' >> ~/.profile && \
-	mkdir -p /app /run/nginx && \
+	mkdir -p /webroot /run/nginx && \
 	chown -R nginx:www-data /run/nginx && \
-	chown -R :www-data /app && \
-	chmod -R g+rw /app
+	chown -R :www-data /webroot && \
+	chmod -R g+rw /webroot
 
 ENV tidy_version=5.6.0
 RUN echo INSTALL TIDY-HTML5 LIBRARY && \
@@ -120,7 +120,7 @@ RUN apk del .build_deps && \
 COPY container_confs /
 RUN chmod a+x /entrypoint.sh /wait-for-it.sh /start_tideways.sh
 
-WORKDIR /app
+WORKDIR /webroot
 
 # Expose the ports for nginx
 EXPOSE 80 443

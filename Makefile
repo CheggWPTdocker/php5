@@ -17,7 +17,7 @@ run: ## just run it in attached mode - for testing
 	docker run -p $(PORT_EXTERNAL):$(PORT_INTERNAL) --name $(NAME)_run --rm -it $(IMAGE)
 
 runvolume: ## run it detached with code volume attached - for development
-	docker run -p $(PORT_EXTERNAL):$(PORT_INTERNAL) --name $(NAME)_run -v ${PWD}/code:/app --rm -id $(IMAGE)
+	docker run -p $(PORT_EXTERNAL):$(PORT_INTERNAL) --name $(NAME)_run -v ${PWD}/code:/webroot --rm -id $(IMAGE)
 
 runshell: ## run the container with an interactive shell - for debugging
 	docker run -p $(PORT_EXTERNAL):$(PORT_INTERNAL) --name $(NAME)_run --rm -it $(IMAGE) /bin/sh
